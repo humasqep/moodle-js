@@ -998,7 +998,3 @@ window.addEventListener(
     );
 
 })();
-
-</script>
-
-})();
