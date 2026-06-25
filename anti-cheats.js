@@ -1117,7 +1117,7 @@ window.addEventListener(
 
             }
 
-        },5000);
+        },3000);
 
     }
 );
