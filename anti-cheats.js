@@ -3,11 +3,7 @@
 'use strict';
 console.log("ANTI CHEAT STARTED");
 	
-   // ==================================================
-    // HANYA AKTIF DI QUIZ
-    // ==================================================
-
-    const currentPath =
+	    const currentPath =
         window.location.pathname;
 
     const isAttemptPage =
@@ -1117,7 +1113,7 @@ window.addEventListener(
 
             }
 
-        },3000);
+        },1000);
 
     }
 );
