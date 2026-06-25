@@ -3,11 +3,27 @@
 'use strict';
 console.log("ANTI CHEAT STARTED");
 	
-    // ==================================================
+   // ==================================================
     // HANYA AKTIF DI QUIZ
     // ==================================================
 
-    if(!window.location.href.includes('/quiz/')){
+    const currentPath =
+        window.location.pathname;
+
+    const isAttemptPage =
+        currentPath.includes(
+            "/mod/quiz/attempt.php"
+        );
+
+    const isSummaryPage =
+        currentPath.includes(
+            "/mod/quiz/summary.php"
+        );
+
+    if(
+        !isAttemptPage &&
+        !isSummaryPage
+    ){
         return;
     }
 
@@ -16,125 +32,208 @@ console.log("ANTI CHEAT STARTED");
     // ==================================================
 
     const attemptId =
-        new URLSearchParams(window.location.search)
-        .get('attempt');
 
-    if(!attemptId){
-        return;
+        new URLSearchParams(
+            window.location.search
+        ).get("attempt")
+
+        ||
+
+        localStorage.getItem(
+            "current_attempt_id"
+        );
+
+    if(attemptId){
+
+        localStorage.setItem(
+            "current_attempt_id",
+            attemptId
+        );
+
     }
 
     // ==================================================
     // CONFIG
     // ==================================================
 
-	const webhookURL = 
-		"https://script.google.com/macros/s/AKfycbwwsqiq2jFKSNspFPRx-5TpwALKfp7t_4AMG9_UtQOyV69a5kCMzGHbT1uHeKb6De8/exec";
+    const webhookURL =
+        "https://script.google.com/macros/s/AKfycbwwsqiq2jFKSNspFPRx-5TpwALKfp7t_4AMG9_UtQOyV69a5kCMzGHbT1uHeKb6De8/exec";
 
     const maxViolation = 5;
 
     const toastDuration = 3000;
 
-    const violationCooldown = 5000;
+    const violationCooldown = 2000;
 
-    // ==================================================
-    // STORAGE
-    // ==================================================
+// ==================================================
+// STORAGE
+// ==================================================
 
-    const storageKey =
-        "quiz_violation_" + attemptId;
+const storageKey =
+    "quiz_violation_" +
+    (attemptId || "unknown");
 
-    const terminatedKey =
-        "quiz_terminated_" + attemptId;
+const terminatedKey =
+    "quiz_terminated_" +
+    (attemptId || "unknown");
+
+// ==================================================
+// BLOCK ACCESS AFTER TERMINATED
+// ==================================================
+
+if(
+
+    localStorage.getItem(
+        terminatedKey
+    ) === "1"
+
+){
+
+    if(isAttemptPage){
+
+        document.body.innerHTML =
+
+            `
+            <div style="
+                display:flex;
+                justify-content:center;
+                align-items:center;
+                height:100vh;
+                font-family:Arial,sans-serif;
+                text-align:center;
+                padding:30px;
+            ">
+                <div>
+                    <h1>
+                        ⛔ Attempt Dihentikan
+                    </h1>
+
+                    <p>
+                        Anda telah melebihi batas pelanggaran yang diperbolehkan.
+                    </p>
+
+                    <p>
+                        Anda akan dialihkan ke halaman ringkasan ujian.
+                    </p>
+                </div>
+            </div>
+            `;
+
+        setTimeout(function(){
+
+            window.location.href =
+
+                "/mod/quiz/summary.php?attempt=" +
+
+                attemptId;
+
+        },1500);
+
+        return;
+
+    }
+
+}
 
     // ==================================================
     // DATA
     // ==================================================
 
     let violationCount =
-        parseInt(localStorage.getItem(storageKey)) || 0;
+        parseInt(
+            localStorage.getItem(
+                storageKey
+            )
+        ) || 0;
 
     let lastViolationTime = 0;
 
     let mouseOutsidePage = false;
-	let lastMouseLeave = 0;
-	let blurTimeout = null;
-	let windowFocused = true;
-	let lastReason = "";
 
-	// ==================================================
-	// GET USERNAME
-	// ==================================================
+    let lastMouseLeave = 0;
 
-	function getUsername(){
+    let blurTimeout = null;
 
-		const selectors = [
-
-			".usermenu .usertext",
-			".usertext",
-			".username",
-			".logininfo a",
-			".logininfo"
-
-		];
-
-		for(let i = 0; i < selectors.length; i++){
-
-			const el =
-				document.querySelector(
-					selectors[i]
-				);
-
-			if(
-				el &&
-				el.innerText.trim() !== ""
-			){
-
-				return el.innerText.trim();
-
-			}
-
-		}
-
-		return "Unknown";
-
-	}
-
-	// ==================================================
-	// GET QUIZ NAME
-	// ==================================================
-
-	function getQuizName(){
-
-		const selectors = [
-
-			"h1",
-			".page-header-headings h1",
-			".activity-header h1"
-
-		];
-
-		for(let i = 0; i < selectors.length; i++){
-
-			const el =
-				document.querySelector(
-					selectors[i]
-				);
-
-			if(
-				el &&
-				el.innerText.trim() !== ""
-			){
-
-				return el.innerText.trim();
-
-			}
-
-		}
-
-		return "Unknown Quiz";
-
-	}
+    let windowFocused = true;
 	
+	let visibilityViolation = false;
+
+    let lastReason = "";
+
+    // ==================================================
+    // GET USERNAME
+    // ==================================================
+
+    function getUsername(){
+
+        const selectors = [
+
+            ".usermenu .usertext",
+            ".usertext",
+            ".username",
+            ".logininfo a",
+            ".logininfo"
+
+        ];
+
+        for(let i = 0; i < selectors.length; i++){
+
+            const el =
+                document.querySelector(
+                    selectors[i]
+                );
+
+            if(
+                el &&
+                el.innerText.trim() !== ""
+            ){
+
+                return el.innerText.trim();
+
+            }
+
+        }
+
+        return "Unknown";
+
+    }
+
+    // ==================================================
+    // GET QUIZ NAME
+    // ==================================================
+
+    function getQuizName(){
+
+        const selectors = [
+
+            "h1",
+            ".page-header-headings h1",
+            ".activity-header h1"
+
+        ];
+
+        for(let i = 0; i < selectors.length; i++){
+
+            const el =
+                document.querySelector(
+                    selectors[i]
+                );
+
+            if(
+                el &&
+                el.innerText.trim() !== ""
+            ){
+
+                return el.innerText.trim();
+
+            }
+
+        }
+
+        return "Unknown Quiz";
+
+    }
+
     // ==================================================
     // COUNTER BOX
     // ==================================================
@@ -142,21 +241,42 @@ console.log("ANTI CHEAT STARTED");
     const counterBox =
         document.createElement("div");
 
-    counterBox.style.position = "fixed";
-    counterBox.style.top = "10px";
-    counterBox.style.right = "10px";
-    counterBox.style.color = "white";
-    counterBox.style.padding = "10px 15px";
-    counterBox.style.fontSize = "15px";
-    counterBox.style.fontWeight = "bold";
-    counterBox.style.borderRadius = "10px";
-    counterBox.style.zIndex = "999999";
+    counterBox.style.position =
+        "fixed";
+
+    counterBox.style.top =
+        "10px";
+
+    counterBox.style.right =
+        "10px";
+
+    counterBox.style.color =
+        "white";
+
+    counterBox.style.padding =
+        "10px 15px";
+
+    counterBox.style.fontSize =
+        "15px";
+
+    counterBox.style.fontWeight =
+        "bold";
+
+    counterBox.style.borderRadius =
+        "10px";
+
+    counterBox.style.zIndex =
+        "999999";
+
     counterBox.style.boxShadow =
         "0 4px 10px rgba(0,0,0,0.3)";
+
     counterBox.style.transition =
         "all 0.3s ease";
 
-    document.body.appendChild(counterBox);
+    document.body.appendChild(
+        counterBox
+    );
 
     // ==================================================
     // UPDATE COUNTER
@@ -165,20 +285,30 @@ console.log("ANTI CHEAT STARTED");
     function updateCounter(){
 
         counterBox.innerHTML =
-            "Pelanggaran: " +
-            violationCount +
-            "/" +
+
+            "Pelanggaran: "
+
+            +
+
+            violationCount
+
+            +
+
+            "/"
+
+            +
+
             maxViolation;
 
-        // HIJAU
-        if(violationCount <= 1){
+        if(
+            violationCount <= 1
+        ){
 
             counterBox.style.background =
                 "#2e7d32";
 
         }
 
-        // ORANYE
         else if(
             violationCount >= 2 &&
             violationCount < maxViolation
@@ -189,7 +319,6 @@ console.log("ANTI CHEAT STARTED");
 
         }
 
-        // MERAH
         else{
 
             counterBox.style.background =
@@ -200,97 +329,199 @@ console.log("ANTI CHEAT STARTED");
     }
 
     updateCounter();
-	
-	// ==================================================
-	// TOAST CONTAINER
-	// ==================================================
 
-	const toastContainer =
-		document.createElement("div");
-
-	toastContainer.style.position = "fixed";
-
-	toastContainer.style.top = "60px";
-
-	toastContainer.style.right = "10px";
-
-	toastContainer.style.display = "flex";
-
-	toastContainer.style.flexDirection =
-		"column";
-
-	toastContainer.style.gap = "10px";
-
-	toastContainer.style.zIndex = "9999999";
-
-	document.body.appendChild(
-		toastContainer
-	);
-	
     // ==================================================
-    // TOAST
+    // TOAST CONTAINER
     // ==================================================
 
-    function showToast(
-        message,
-        bgColor = "#d32f2f"
-    ){
+    const toastContainer =
+        document.createElement("div");
 
-        const toast =
-            document.createElement("div");
+    toastContainer.style.position =
+        "fixed";
 
-        toast.innerHTML = message;
+    toastContainer.style.top =
+        "60px";
 
-        toast.style.background = bgColor;
-        toast.style.color = "white";
-        toast.style.padding = "14px 20px";
-        toast.style.borderRadius = "10px";
-        toast.style.fontSize = "14px";
-        toast.style.fontWeight = "bold";
-        toast.style.zIndex = "9999999";
-        toast.style.boxShadow =
-            "0 4px 10px rgba(0,0,0,0.3)";
-        toast.style.opacity = "0";
-        toast.style.transform =
-            "translateY(-10px)";
-        toast.style.transition =
-            "all 0.3s ease";
-		toast.style.maxWidth = "320px";
+    toastContainer.style.right =
+        "10px";
+
+    toastContainer.style.display =
+        "flex";
+
+    toastContainer.style.flexDirection =
+        "column";
+
+    toastContainer.style.gap =
+        "10px";
+
+    toastContainer.style.zIndex =
+        "9999999";
+
+    document.body.appendChild(
+        toastContainer
+    );
+	// ==================================================
+	// PERSISTENT TOAST
+	// ==================================================
+
+	let persistentViolationToast = null;
+
+	// ==================================================
+	// TOAST
+	// ==================================================
+
+	function showToast(
+		message,
+		bgColor = "#d32f2f",
+		persistent = false
+	){
+
+		// Jangan buat toast permanen lebih dari satu
+		if(
+			persistent &&
+			persistentViolationToast
+		){
+			return;
+		}
+
+		const toast =
+			document.createElement(
+				"div"
+			);
+
+		toast.innerHTML =
+			message;
+
+		toast.style.background =
+			bgColor;
+
+		toast.style.color =
+			"white";
+
+		toast.style.padding =
+			"14px 20px";
+
+		toast.style.borderRadius =
+			"10px";
+
+		toast.style.fontSize =
+			"14px";
+
+		toast.style.fontWeight =
+			"bold";
+
+		toast.style.boxShadow =
+			"0 4px 10px rgba(0,0,0,0.3)";
+
+		toast.style.opacity =
+			"0";
+
+		toast.style.transform =
+			"translateY(-10px)";
+
+		toast.style.transition =
+			"all 0.3s ease";
+
+		toast.style.maxWidth =
+			"320px";
+
 		toast.style.wordBreak =
 			"break-word";
+
 		toast.style.lineHeight =
 			"1.4";
-	
-        toastContainer.appendChild(toast);
 
-        // Fade in
-        setTimeout(function(){
+		toastContainer.appendChild(
+			toast
+		);
 
-            toast.style.opacity = "1";
+		setTimeout(function(){
 
-            toast.style.transform =
-                "translateY(0px)";
+			toast.style.opacity =
+				"1";
 
-        }, 100);
+			toast.style.transform =
+				"translateY(0px)";
 
-        // Fade out
-        setTimeout(function(){
+		},100);
 
-            toast.style.opacity = "0";
+		if(persistent){
 
-            toast.style.transform =
-                "translateY(-10px)";
+			persistentViolationToast =
+				toast;
 
-            setTimeout(function(){
+		}else{
 
-                toast.remove();
+			setTimeout(function(){
 
-            }, 300);
+				toast.style.opacity =
+					"0";
 
-        }, toastDuration);
+				toast.style.transform =
+					"translateY(-10px)";
 
-    }
+				setTimeout(function(){
 
+					toast.remove();
+
+				},300);
+
+			},toastDuration);
+
+		}
+
+	}
+
+	// ==================================================
+	// HIDE PERSISTENT TOAST
+	// ==================================================
+
+	function hidePersistentToast(){
+
+		if(
+			!persistentViolationToast
+		){
+			return;
+		}
+
+		const toast =
+			persistentViolationToast;
+
+		// Kosongkan dulu supaya bisa dibuat lagi
+		persistentViolationToast =
+			null;
+
+		// Jika toast sudah hilang karena refresh/pergantian halaman
+		if(
+			!toast ||
+			!toast.parentNode
+		){
+			return;
+		}
+
+		// Hilangkan 3 detik setelah peserta kembali
+		setTimeout(function(){
+
+			toast.style.opacity =
+				"0";
+
+			toast.style.transform =
+				"translateY(-10px)";
+
+			setTimeout(function(){
+
+				if(
+					toast.parentNode
+				){
+					toast.remove();
+				}
+
+			},300);
+
+		},3000);
+
+	}
     // ==================================================
     // BLUR OVERLAY
     // ==================================================
@@ -361,55 +592,69 @@ console.log("ANTI CHEAT STARTED");
     // TERMINATE QUIZ
     // ==================================================
 
-    function terminateQuiz(){
+function terminateQuiz(){
 
-        localStorage.setItem(
-            terminatedKey,
-            "1"
-        );
+    localStorage.setItem(
+        terminatedKey,
+        "1"
+    );
 
-        showToast(
-            "⛔ Batas pelanggaran tercapai<br>" +
-            "Quiz akan dihentikan",
-            "#000"
-        );
-		sendActivityLog(
-			"⛔ Batas pelanggaran tercapai",
-		"warning"
-		);
-		
-        // Cari tombol selesai
-        let finishBtn =
-            Array.from(
-                document.querySelectorAll(
-                    "button, input"
+    sendActivityLog(
+        "⛔ Attempt dihentikan karena batas pelanggaran tercapai",
+        "terminate"
+    );
+
+    showToast(
+        "⛔ Batas pelanggaran tercapai<br>Quiz akan dihentikan",
+        "#000"
+    );
+
+    let finishBtn =
+        Array.from(
+            document.querySelectorAll(
+                "button,input"
+            )
+        ).find(function(el){
+
+            return (
+
+                el.innerText?.includes(
+                    "Selesaikan"
                 )
-            ).find(function(el){
 
-                return (
+                ||
 
-                    el.innerText?.includes("Selesaikan") ||
-                    el.value?.includes("Selesaikan") ||
+                el.value?.includes(
+                    "Selesaikan"
+                )
 
-                    el.innerText?.includes("Finish") ||
-                    el.value?.includes("Finish")
+                ||
 
-                );
+                el.innerText?.includes(
+                    "Finish"
+                )
 
-            });
+                ||
 
-        // Auto klik
-        if(finishBtn){
+                el.value?.includes(
+                    "Finish"
+                )
 
-            setTimeout(function(){
+            );
 
-                finishBtn.click();
+        });
 
-            }, 2000);
+    if(finishBtn){
 
-        }
+        setTimeout(function(){
+
+            finishBtn.click();
+
+        },1500);
 
     }
+
+}
 
     // ==================================================
     // ADD VIOLATION
@@ -699,51 +944,187 @@ console.log("ANTI CHEAT STARTED");
         }
 
     }
+// ==================================================
+// TAB SWITCH + INTERNAL NAVIGATION
+// ==================================================
 
-    // ==================================================
-    // TAB SWITCH
-    // ==================================================
+let internalNavigation = false;
+
+// Deteksi navigasi resmi Moodle
 document.addEventListener(
-    "visibilitychange",
-    function(){
+    "click",
+    function(e){
 
-        if(document.hidden){
+        const text =
 
-            addViolation(
-                "⚠️ Anda terdeteksi meninggalkan tab ujian"
-            );
+            e.target.innerText ||
+
+            e.target.value ||
+
+            "";
+
+        if(
+
+            text.includes("Finish attempt")
+
+            ||
+
+            text.includes("Selesaikan")
+
+            ||
+
+            text.includes("Submit all and finish")
+
+            ||
+
+            text.includes("Kirim dan selesai")
+
+            ||
+
+            text.includes("Return to attempt")
+
+            ||
+
+            text.includes("Kembali ke pengerjaan")
+
+            ||
+
+            text.includes("Next page")
+
+            ||
+
+            text.includes("Halaman berikutnya")
+
+            ||
+
+            text.includes("Previous page")
+
+            ||
+
+            text.includes("Halaman sebelumnya")
+
+        ){
+
+            internalNavigation = true;
+
         }
 
     }
 );
+
+// Reset saat halaman selesai dimuat
+window.addEventListener(
+    "load",
+    function(){
+
+        internalNavigation = false;
+
+    }
+);
+
+// ==================================================
+// VISIBILITY CHANGE
+// ==================================================
+
+document.addEventListener(
+    "visibilitychange",
+    function(){
+
+        // Keluar tab
+        if(document.hidden){
+
+            // Abaikan navigasi Moodle
+            if(internalNavigation){
+                return;
+            }
+
+            visibilityViolation = true;
+
+            if(
+                isAttemptPage ||
+                isSummaryPage
+            ){
+
+                showToast(
+                    "⚠️ Anda terdeteksi meninggalkan tab ujian",
+                    "#d32f2f",
+                    true
+                );
+
+                addViolation(
+                    "⚠️ Anda terdeteksi meninggalkan tab ujian"
+                );
+
+            }
+
+        }
+
+        // Kembali ke tab
+        else{
+
+            if(visibilityViolation){
+
+                visibilityViolation = false;
+
+                hidePersistentToast();
+
+            }
+
+        }
+
+    }
+);
+
+// ==================================================
+// WINDOW BLUR
+// ==================================================
+
 window.addEventListener(
     "blur",
     function(){
+
+        // Abaikan navigasi Moodle
+        if(internalNavigation){
+            return;
+        }
 
         windowFocused = false;
 
         focusOverlay.style.display =
             "block";
 
-        // Tunggu 2 detik
         blurTimeout = setTimeout(function(){
 
-            // Jika masih unfocus
-            if(!windowFocused){
+            if(
+                !windowFocused &&
+                (
+                    isAttemptPage ||
+                    isSummaryPage
+                )
+            ){
+
+                blurViolation = true;
+
+                showToast(
+                    "⚠️ Fokus keluar dari halaman ujian",
+                    "#d32f2f",
+                    true
+                );
 
                 addViolation(
                     "⚠️ Fokus keluar dari halaman ujian"
                 );
+
             }
 
-        }, 2000);
+        },1000);
 
     }
 );
 
-    // ==================================================
-    // WINDOW FOCUS
-    // ==================================================
+// ==================================================
+// WINDOW FOCUS
+// ==================================================
 
 window.addEventListener(
     "focus",
@@ -751,8 +1132,9 @@ window.addEventListener(
 
         windowFocused = true;
 
-        // Batalkan violation blur
-        clearTimeout(blurTimeout);
+        clearTimeout(
+            blurTimeout
+        );
 
         if(!mouseOutsidePage){
 
@@ -761,79 +1143,85 @@ window.addEventListener(
 
         }
 
+        if(blurViolation){
+
+            blurViolation = false;
+
+            hidePersistentToast();
+
+        }
+
     }
 );
 
-    // ==================================================
-    // MOUSE OUTSIDE WINDOW
-    // ==================================================
+// ==================================================
+// MOUSE OUTSIDE WINDOW
+// ==================================================
 
-	document.addEventListener(
-		"mouseout",
-		function(e){
+document.addEventListener(
+    "mouseout",
+    function(e){
 
-			// Pastikan benar-benar keluar window
-			if(
-				!e.relatedTarget &&
-				!e.toElement
-			){
+        if(
+            !e.relatedTarget &&
+            !e.toElement
+        ){
 
-				const now = Date.now();
+            const now =
+                Date.now();
 
-				// Cooldown 3 detik
-				if(
-					now - lastMouseLeave
-					< 3000
-				){
-					return;
-				}
-
-				lastMouseLeave = now;
-
-				// Hindari spam
-				if(mouseOutsidePage){
-					return;
-				}
-
-				mouseOutsidePage = true;
-
-				focusOverlay.style.display =
-					"block";
-
-				showToast(
-					"ℹ️ Cursor keluar dari halaman ujian",
-					"#42a5f5"
-				);
-				sendActivityLog(
-					"ℹ️ Cursor keluar dari halaman ujian",
-					"warning"
-				);
-			}
-
-		}
-	);
-
-    // ==================================================
-    // MOUSE KEMBALI
-    // ==================================================
-
-    document.addEventListener(
-        "mouseenter",
-        function(){
-
-            if(mouseOutsidePage){
-
-                mouseOutsidePage = false;
-
-                // Hilangkan blur
-                focusOverlay.style.display =
-                    "none";
-
+            if(
+                now - lastMouseLeave
+                < 3000
+            ){
+                return;
             }
 
-        }
-    );
+            lastMouseLeave = now;
 
+            if(mouseOutsidePage){
+                return;
+            }
+
+            mouseOutsidePage = true;
+
+            focusOverlay.style.display =
+                "block";
+
+            showToast(
+                "ℹ️ Cursor keluar dari halaman ujian",
+                "#42a5f5"
+            );
+
+            sendActivityLog(
+                "ℹ️ Cursor keluar dari halaman ujian",
+                "warning"
+            );
+
+        }
+
+    }
+);
+
+// ==================================================
+// MOUSE KEMBALI
+// ==================================================
+
+document.addEventListener(
+    "mouseenter",
+    function(){
+
+        if(mouseOutsidePage){
+
+            mouseOutsidePage = false;
+
+            focusOverlay.style.display =
+                "none";
+
+        }
+
+    }
+);
     // ==================================================
     // BLOK RESUME
     // ==================================================
