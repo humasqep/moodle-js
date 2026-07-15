@@ -69,15 +69,15 @@
       <div style="display:flex;justify-content:center;align-items:center;
                   height:100vh;font-family:Arial,sans-serif;text-align:center;padding:30px;">
         <div>
-          <h1>⛔ Attempt Dihentikan</h1>
+          <h1>⛔ Pengerjaan Dihentikan</h1>
           <p>Anda telah melebihi batas pelanggaran yang diperbolehkan.</p>
-          <p>Anda akan dialihkan ke halaman ringkasan ujian.</p>
+          <p>Pilih "Submit all and finish" untuk lanjut ke subtes berikutnya</p>
         </div>
       </div>`;
 
     setTimeout(function () {
       window.location.href = "/mod/quiz/summary.php?attempt=" + attemptId;
-    }, 1500);
+    }, 2500);
 
     return;
   }
@@ -135,19 +135,159 @@
   }
 
   function getEmailPrefix() {
-    const emailLink = document.querySelector('a[href^="mailto:"]');
+    // Dipertahankan sebagai fallback instan (biasanya "Unknown" di
+    // halaman attempt/summary karena Moodle memang tidak menampilkan
+    // email di sana), sambil menunggu hasil dari getCachedEmailPrefix().
+    const emailLink = document.querySelector(
+      '.usermenu a[href^="mailto:"], .logininfo a[href^="mailto:"]'
+    );
     if (!emailLink) return "Unknown";
     const address = emailLink.getAttribute("href").replace("mailto:", "").trim();
-    return address.split("@")[0] || "Unknown";
+    return decodeEmailHref(address).split("@")[0] || "Unknown";
+  }
+
+  function decodeEmailHref(rawAddress) {
+    try {
+      return decodeURIComponent(rawAddress);
+    } catch (e) {
+      return rawAddress;
+    }
+  }
+
+  function extractProfileEmailLink(doc) {
+    // Prioritas 1: cari khusus di area konten utama halaman profil,
+    // supaya tidak salah tangkap link mailto header/footer situs
+    // (yang sama muncul di semua halaman, seperti email humas/kontak).
+    const scopedLink = doc.querySelector(
+      '#region-main a[href^="mailto:"], .userprofile a[href^="mailto:"], #page-content a[href^="mailto:"]'
+    );
+    if (scopedLink) return scopedLink;
+
+    // Prioritas 2: cari lewat label "Email address" (pola dt/dd khas
+    // halaman profil Moodle), lebih tahan terhadap perbedaan tema.
+    const dtElements = Array.from(doc.querySelectorAll("dt"));
+    const emailDt = dtElements.find(function (dt) {
+      return /email/i.test(dt.textContent);
+    });
+    if (emailDt && emailDt.nextElementSibling) {
+      const link = emailDt.nextElementSibling.querySelector('a[href^="mailto:"]');
+      if (link) return link;
+    }
+
+    return null;
+  }
+
+  // ==================================================
+  // AMBIL EMAIL DARI HALAMAN PROFIL (async, di-cache)
+  // Halaman attempt/summary biasanya tidak menampilkan email siswa,
+  // tapi halaman profil siswa sendiri menampilkannya (walau
+  // di-obfuscate). Kita ambil sekali lewat fetch, lalu simpan cache
+  // supaya tidak perlu request ulang setiap kali ada event.
+  // ==================================================
+  let emailPrefixCache = null;
+  let emailPrefixPromise = null;
+
+  function getCachedEmailPrefix() {
+    if (emailPrefixCache !== null) return Promise.resolve(emailPrefixCache);
+    if (emailPrefixPromise) return emailPrefixPromise;
+
+    const userId = getMoodleUserId();
+    if (userId === "Unknown") {
+      emailPrefixCache = getEmailPrefix();
+      return Promise.resolve(emailPrefixCache);
+    }
+
+    const cacheKey = "moodle_email_prefix_v2_" + userId;
+    const cachedLocal = storageGet(cacheKey);
+    if (cachedLocal) {
+      emailPrefixCache = cachedLocal;
+      return Promise.resolve(emailPrefixCache);
+    }
+
+    emailPrefixPromise = fetch("/user/profile.php?id=" + encodeURIComponent(userId), {
+      credentials: "same-origin"
+    })
+      .then(function (res) {
+        return res.text();
+      })
+      .then(function (html) {
+        const doc = new DOMParser().parseFromString(html, "text/html");
+        const link = extractProfileEmailLink(doc);
+        if (!link) return getEmailPrefix(); // fallback ke hasil scan halaman saat ini
+
+        const rawAddress = link.getAttribute("href").replace(/^mailto:/, "");
+        const decoded = decodeEmailHref(rawAddress);
+        const prefix = decoded.split("@")[0] || "Unknown";
+
+        storageSet(cacheKey, prefix);
+        return prefix;
+      })
+      .catch(function () {
+        return getEmailPrefix();
+      })
+      .then(function (result) {
+        emailPrefixCache = result;
+        return result;
+      });
+
+    return emailPrefixPromise;
   }
 
   function getCourseName() {
+    // Prioritas 1: cari link breadcrumb yang benar-benar menuju halaman course
+    // (lebih andal daripada menebak posisi, karena posisi breadcrumb bisa
+    // berbeda-beda tergantung kategori/tema Moodle yang dipakai)
+    const courseLink = document.querySelector(
+      '.breadcrumb a[href*="/course/view.php"], .breadcrumb-item a[href*="/course/view.php"]'
+    );
+    if (courseLink && courseLink.innerText.trim() !== "") {
+      return courseLink.innerText.trim();
+    }
+
+    // Prioritas 2: fallback ke posisi breadcrumb (perilaku lama, kurang akurat)
     const breadcrumbItems = document.querySelectorAll(".breadcrumb li, .breadcrumb-item");
-    // Struktur breadcrumb Moodle biasanya: Home > Course > Quiz
     if (breadcrumbItems.length >= 2) {
       return breadcrumbItems[breadcrumbItems.length - 2].innerText.trim() || "Unknown";
     }
     return "Unknown";
+  }
+
+  function getMoodleUserId() {
+    // Coba beberapa pola yang umum dipakai berbagai tema Moodle,
+    // dari yang paling spesifik ke yang paling umum.
+    const linkSelectors = [
+      '.usermenu a[href*="/user/view.php"]',
+      '.usermenu a[href*="/user/profile.php"]',
+      '.logininfo a[href*="/user/view.php"]',
+      '.logininfo a[href*="/user/profile.php"]',
+      'a[href*="/user/profile.php?id="]',
+      'a[href*="/user/view.php?id="]'
+    ];
+
+    for (let i = 0; i < linkSelectors.length; i++) {
+      const link = document.querySelector(linkSelectors[i]);
+      const id = extractIdFromHref(link);
+      if (id) return id;
+    }
+
+    // Fallback: elemen foto profil (userpicture) hampir selalu ada
+    // di semua tema Moodle dan biasanya dibungkus tag <a> menuju profil.
+    const avatarEl = document.querySelector(".userpicture, .usermenu img");
+    const avatarLink = avatarEl ? avatarEl.closest("a") : null;
+    const avatarId = extractIdFromHref(avatarLink);
+    if (avatarId) return avatarId;
+
+    return "Unknown";
+  }
+
+  function extractIdFromHref(linkEl) {
+    if (!linkEl) return null;
+    try {
+      const url = new URL(linkEl.getAttribute("href"), window.location.origin);
+      return url.searchParams.get("id");
+    } catch (e) {
+      return null;
+    }
   }
 
   function getQuizName() {
@@ -317,16 +457,51 @@
   }
 
   // ==================================================
+  // THROTTLE LOG INFO (bukan pelanggaran)
+  // Mencegah spam ke spreadsheet untuk event yang bisa
+  // terjadi berkali-kali dalam waktu singkat, seperti
+  // kursor keluar-masuk, klik kanan berulang, dll.
+  // Pelanggaran resmi (lewat addViolation) sudah punya
+  // cooldown-nya sendiri dan tidak terpengaruh ini.
+  // ==================================================
+  const INFO_LOG_COOLDOWN_MS = 4000;
+  const lastInfoLogTime = {};
+
+  function shouldThrottleInfoLog(reason) {
+    const now = Date.now();
+    const last = lastInfoLogTime[reason] || 0;
+    if (now - last < INFO_LOG_COOLDOWN_MS) return true;
+    lastInfoLogTime[reason] = now;
+    return false;
+  }
+
+  // ==================================================
   // KIRIM LOG AKTIVITAS KE GOOGLE SHEET
   // ==================================================
   function sendActivityLog(reason, type) {
     type = type || "warning";
 
+    // Hanya throttle log bertipe "warning" (info), bukan
+    // "violation" atau "terminate" yang memang harus selalu tercatat.
+    if (type === "warning" && shouldThrottleInfoLog(reason)) return;
+
+    // Email diambil secara async (lihat getCachedEmailPrefix), jadi
+    // pengiriman log ditunda sedikit sampai hasilnya siap. Untuk log
+    // pertama di sesi ini biasanya butuh 1x fetch (beberapa ratus ms),
+    // setelah itu langsung dari cache.
+    getCachedEmailPrefix().then(function (emailPrefix) {
+      sendActivityLogWithEmail(reason, type, emailPrefix);
+    });
+  }
+
+  function sendActivityLogWithEmail(reason, type, emailPrefix) {
+
     const data = {
       timestamp: new Date().toLocaleString(),
       type: type,
       attemptId: attemptId,
-      username: getEmailPrefix(),
+      userId: getMoodleUserId(),
+      username: emailPrefix,
       user: getFullname(),
       course: getCourseName(),
       quiz: getQuizName(),
@@ -365,9 +540,9 @@
   function terminateQuiz() {
     storageSet(terminatedKey, "1");
 
-    sendActivityLog("⛔ Attempt dihentikan karena batas pelanggaran tercapai", "terminate");
+    sendActivityLog("⛔ Tes dihentikan (batas pelanggaran tercapai)", "terminate");
 
-    showToast("⛔ Batas pelanggaran tercapai<br>Quiz akan dihentikan", "#000");
+    showToast("⛔ Batas pelanggaran tercapai<br>Tes akan dihentikan", "#000");
 
     const finishBtn = Array.from(document.querySelectorAll("button,input")).find(function (el) {
       const text = el.innerText || el.value || "";
@@ -451,8 +626,8 @@
       if (internalNavigation) return;
 
       visibilityViolation = true;
-      showToast("⚠️ Anda terdeteksi meninggalkan tab ujian", "#d32f2f", true);
-      addViolation("⚠️ Anda terdeteksi meninggalkan tab ujian");
+      showToast("⚠️ Meninggalkan tab ujian", "#d32f2f", true);
+      addViolation("⚠️ Meninggalkan tab ujian");
     } else if (visibilityViolation) {
       visibilityViolation = false;
       hidePersistentToast();
@@ -471,8 +646,8 @@
     blurTimeout = setTimeout(function () {
       if (!windowFocused) {
         blurViolation = true;
-        showToast("⚠️ Fokus keluar dari halaman ujian", "#d32f2f", true);
-        addViolation("⚠️ Fokus keluar dari halaman ujian");
+        showToast("⚠️ Meninggalkan halaman ujian", "#d32f2f", true);
+        addViolation("⚠️ Meninggalkan halaman ujian");
       }
     }, CONFIG.blurGraceMs);
   });
@@ -534,6 +709,10 @@
     });
   }
   disableAttemptButtons();
+
+  // Mulai ambil email siswa di awal (background), supaya saat ada
+  // pelanggaran pertama datanya sudah siap tanpa harus menunggu.
+  getCachedEmailPrefix();
 
   // ==================================================
   // ANTI COPY / PASTE / CUT / KLIK KANAN / SHORTCUT
