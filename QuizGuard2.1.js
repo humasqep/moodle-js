@@ -1,7 +1,7 @@
-<script>
-(function () {
-  "use strict";
+(() => {
 
+'use strict';
+console.log("ANTI CHEAT STARTED");
   // ==================================================
   // HANYA JALAN DI HALAMAN ATTEMPT / SUMMARY KUIS
   // ==================================================
@@ -618,6 +618,14 @@
     internalNavigation = false;
   });
 
+  // Refresh (F5, Ctrl+R, tombol reload browser) atau menutup
+  // tab/window juga memicu blur/visibilitychange sesaat sebelum
+  // halaman benar-benar berpindah. Tandai sebagai navigasi resmi
+  // supaya tidak salah dianggap "meninggalkan halaman ujian".
+  window.addEventListener("beforeunload", function () {
+    internalNavigation = true;
+  });
+
   // ==================================================
   // DETEKSI PINDAH TAB (visibilitychange)
   // ==================================================
@@ -633,6 +641,24 @@
       hidePersistentToast();
     }
   });
+
+  // ==================================================
+  // BERSIHKAN STATUS BLUR/OVERLAY SECARA TERPUSAT
+  // Dipanggil dari beberapa event (mouseenter, mousemove, focus)
+  // supaya overlay & notifikasi blur tidak pernah "nyangkut" hanya
+  // karena window tidak benar-benar refocus (butuh klik), padahal
+  // kursor sudah aktif kembali di halaman.
+  // ==================================================
+  function clearBlurState() {
+    windowFocused = true;
+    clearTimeout(blurTimeout);
+    focusOverlay.style.display = "none";
+
+    if (blurViolation) {
+      blurViolation = false;
+      hidePersistentToast();
+    }
+  }
 
   // ==================================================
   // DETEKSI WINDOW BLUR / FOCUS
@@ -653,16 +679,11 @@
   });
 
   window.addEventListener("focus", function () {
-    windowFocused = true;
-    clearTimeout(blurTimeout);
-
-    if (!mouseOutsidePage) {
-      focusOverlay.style.display = "none";
-    }
-
-    if (blurViolation) {
-      blurViolation = false;
-      hidePersistentToast();
+    clearBlurState();
+    if (mouseOutsidePage) {
+      // Window fokus lagi tapi kursor masih di luar -> overlay
+      // tetap ditampilkan untuk kasus ini saja.
+      focusOverlay.style.display = "block";
     }
   });
 
@@ -685,9 +706,25 @@
   });
 
   document.addEventListener("mouseenter", function () {
-    if (mouseOutsidePage) {
+    mouseOutsidePage = false;
+    // Kursor kembali ke halaman = anggap siswa sudah kembali,
+    // bersihkan juga status blur meski window belum "focus" resmi
+    // (mis. karena cuma gerak mouse tanpa klik).
+    clearBlurState();
+  });
+
+  // Jaring pengaman tambahan: gerakan mouse apa pun di dalam halaman
+  // memastikan overlay/notifikasi blur tidak pernah nyangkut, apa pun
+  // urutan event yang terjadi sebelumnya.
+  let lastMouseMoveClear = 0;
+  document.addEventListener("mousemove", function () {
+    const now = Date.now();
+    if (now - lastMouseMoveClear < 500) return; // dibatasi, cukup ringan
+    lastMouseMoveClear = now;
+
+    if (mouseOutsidePage || blurViolation || !windowFocused) {
       mouseOutsidePage = false;
-      focusOverlay.style.display = "none";
+      clearBlurState();
     }
   });
 
@@ -753,5 +790,5 @@
   // Bersihkan referensi fungsi yang tidak lagi dipakai langsung
   // (dipertahankan untuk konsistensi/reuse di masa depan)
   void getUsername;
+
 })();
-</script>
