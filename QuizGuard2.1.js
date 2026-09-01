@@ -90,7 +90,6 @@ console.log("ANTI CHEAT STARTED");
   let lastReason = "";
 
   let mouseOutsidePage = false;
-  let lastMouseLeave = 0;
 
   let windowFocused = true;
   let blurTimeout = null;
@@ -629,16 +628,31 @@ console.log("ANTI CHEAT STARTED");
   // ==================================================
   // DETEKSI PINDAH TAB (visibilitychange)
   // ==================================================
+  let visibilityTimeout = null;
+
   document.addEventListener("visibilitychange", function () {
     if (document.hidden) {
       if (internalNavigation) return;
 
-      visibilityViolation = true;
-      showToast("⚠️ Meninggalkan tab ujian", "#d32f2f", true);
-      addViolation("⚠️ Meninggalkan tab ujian");
-    } else if (visibilityViolation) {
-      visibilityViolation = false;
-      hidePersistentToast();
+      // Diberi jeda toleransi (sama seperti deteksi blur). Kalau ini
+      // ternyata refresh/reload, halaman akan hancur/berpindah SEBELUM
+      // jeda ini selesai, sehingga pelanggaran tidak pernah tercatat.
+      // Kalau ini benar pindah tab (halaman lama tetap hidup di
+      // background), jeda ini akan selesai normal dan tetap tercatat.
+      clearTimeout(visibilityTimeout);
+      visibilityTimeout = setTimeout(function () {
+        if (!document.hidden || internalNavigation) return;
+
+        visibilityViolation = true;
+        showToast("⚠️ Meninggalkan tab ujian", "#d32f2f", true);
+        addViolation("⚠️ Meninggalkan tab ujian");
+      }, CONFIG.blurGraceMs);
+    } else {
+      clearTimeout(visibilityTimeout);
+      if (visibilityViolation) {
+        visibilityViolation = false;
+        hidePersistentToast();
+      }
     }
   });
 
@@ -692,16 +706,14 @@ console.log("ANTI CHEAT STARTED");
   // ==================================================
   document.addEventListener("mouseout", function (e) {
     if (e.relatedTarget || e.toElement) return;
-
-    const now = Date.now();
-    if (now - lastMouseLeave < 3000) return;
-    lastMouseLeave = now;
-
     if (mouseOutsidePage) return;
     mouseOutsidePage = true;
 
     focusOverlay.style.display = "block";
     showToast("ℹ️ Cursor keluar dari halaman ujian", "#42a5f5");
+    // Pengiriman log tetap dibatasi lewat shouldThrottleInfoLog()
+    // di dalam sendActivityLog, jadi overlay boleh merespons instan
+    // tanpa membuat spreadsheet kebanjiran data.
     sendActivityLog("ℹ️ Cursor keluar dari halaman ujian", "warning");
   });
 
@@ -790,5 +802,4 @@ console.log("ANTI CHEAT STARTED");
   // Bersihkan referensi fungsi yang tidak lagi dipakai langsung
   // (dipertahankan untuk konsistensi/reuse di masa depan)
   void getUsername;
-
 })();
