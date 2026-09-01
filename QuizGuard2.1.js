@@ -1,3 +1,5 @@
+(function () {
+  "use strict";
 
   // ==================================================
   // HANYA JALAN DI HALAMAN ATTEMPT / SUMMARY KUIS
